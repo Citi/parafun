@@ -9,6 +9,7 @@ try:
     from scaler import Client, SchedulerClusterCombo
     from scaler.client.future import ScalerFuture
     from scaler.client.object_reference import ObjectReference
+    from scaler.worker.agent.processor.processor import Processor
 except ImportError:
     raise ImportError("Scaler dependency missing. Use `pip install 'opengris-parfun[scaler]'` to install Scaler.")
 
@@ -23,9 +24,14 @@ class ScalerSession(BackendSession):
     # Additional constant scheduling overhead that cannot be accounted for when measuring the task execution duration.
     CONSTANT_SCHEDULING_OVERHEAD = 8_000_000  # 8ms
 
-    def __init__(self, scheduler_address: str, n_workers: int, client_kwargs: Dict):
+    def __init__(self, scheduler_address: str, n_workers: int, client_kwargs: Dict, use_worker_client: bool = False):
+        """
+        :param use_worker_client: if ``True`` and the session is created inside a Scaler worker, connects to the
+            scheduler the worker is currently connected to, instead of using ``scheduler_address``.
+        """
+
         self._concurrent_task_guard = BoundedSemaphore(n_workers)
-        self._client = Client(address=scheduler_address, profiling=True, **client_kwargs)
+        self._client = self.__get_client_instance(scheduler_address, client_kwargs, use_worker_client)
 
     def __enter__(self) -> "ScalerSession":
         return self
@@ -78,6 +84,29 @@ class ScalerSession(BackendSession):
 
         return future
 
+    @staticmethod
+    def __get_client_instance(scheduler_address: str, client_kwargs: Dict, use_worker_client: bool) -> Client:
+        """
+        Instantiates the Scaler client to submit the session's tasks with.
+
+        When ``use_worker_client`` is set and we are currently running inside a Scaler worker, lets Scaler resolve the
+        scheduler's address from the running worker instead of reusing the (possibly unreachable) address from the
+        parent task.
+        """
+
+        is_inside_worker = Processor.get_current_processor() is not None
+
+        if use_worker_client and is_inside_worker:
+            worker_client_kwargs = {
+                kwarg: value
+                for kwarg, value in client_kwargs.items()
+                if kwarg not in {"address", "object_storage_address"}
+            }
+
+            return Client(address=None, profiling=True, **worker_client_kwargs)
+
+        return Client(address=scheduler_address, profiling=True, **client_kwargs)
+
 
 class ScalerClientPool:
     def __init__(self, scheduler_address: str, client_kwargs: Dict, max_unused_clients: int = 1):
@@ -126,11 +155,22 @@ class ScalerRemoteBackend(BackendEngine):
         scheduler_address: str,
         n_workers: int = psutil.cpu_count(logical=False) - 1,
         allows_nested_tasks: bool = True,
+        use_worker_client: bool = False,
         **client_kwargs,
     ):
+        """
+        :param use_worker_client: if ``True``, nested tasks connect to the scheduler their worker is currently
+            connected to, instead of reusing the address and the network settings of the process that submitted the
+            parent task.
+
+            Required when the workers cannot reach the scheduler at the same address as the submitting process
+            (e.g. NAT-ed, Docker or Kubernetes deployments).
+        """
+
         self._scheduler_address = scheduler_address
         self._n_workers = n_workers
         self._allows_nested_tasks = allows_nested_tasks
+        self._use_worker_client = use_worker_client
         self._client_kwargs = client_kwargs
 
     def __getstate__(self) -> dict:
@@ -138,6 +178,7 @@ class ScalerRemoteBackend(BackendEngine):
             "scheduler_address": self._scheduler_address,
             "n_workers": self._n_workers,
             "allows_nested_tasks": self._allows_nested_tasks,
+            "use_worker_client": self._use_worker_client,
             "client_kwargs": self._client_kwargs,
         }
 
@@ -145,10 +186,11 @@ class ScalerRemoteBackend(BackendEngine):
         self._scheduler_address = state["scheduler_address"]
         self._n_workers = state["n_workers"]
         self._allows_nested_tasks = state["allows_nested_tasks"]
+        self._use_worker_client = state["use_worker_client"]
         self._client_kwargs = state["client_kwargs"]
 
     def session(self) -> ScalerSession:
-        return ScalerSession(self._scheduler_address, self._n_workers, self._client_kwargs)
+        return ScalerSession(self._scheduler_address, self._n_workers, self._client_kwargs, self._use_worker_client)
 
     def get_scheduler_address(self) -> str:
         return self._scheduler_address
@@ -172,6 +214,7 @@ class ScalerLocalBackend(ScalerRemoteBackend):
         n_workers: int = psutil.cpu_count(logical=False) - 1,
         per_worker_task_queue_size: int = 1000,
         allows_nested_tasks: bool = True,
+        use_worker_client: bool = False,
         logging_paths: Tuple[str, ...] = ("/dev/stdout",),
         logging_level: str = "INFO",
         logging_config_file: Optional[str] = None,
@@ -180,6 +223,7 @@ class ScalerLocalBackend(ScalerRemoteBackend):
         """
         :param scheduler_address the ``tcp://host:port`` tuple to use as a cluster address. If ``None``, listen to the
         local host on an available TCP port.
+        :param use_worker_client: see :class:`ScalerRemoteBackend`.
         """
 
         client_kwargs = self.__get_constructor_arg_names(Client)
@@ -199,6 +243,7 @@ class ScalerLocalBackend(ScalerRemoteBackend):
         super().__init__(
             scheduler_address=scheduler_address,
             allows_nested_tasks=allows_nested_tasks,
+            use_worker_client=use_worker_client,
             n_workers=n_workers,
             **{kwarg: value for kwarg, value in kwargs.items() if kwarg in client_kwargs},
         )
