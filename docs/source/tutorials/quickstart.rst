@@ -39,12 +39,12 @@ First, install the ``opengris-parfun`` package from PyPI using any compatible pa
 
 
 The above command will **only install the base package**. This is suitable for using the ``multiprocessing`` backend, however
-if you wish to use an alternate computing backend, such as Scaler or Dask, or to enable Pandas' support,
-install the `scaler`, `dask`, or `pandas` extras as required:
+if you wish to use an alternate computing backend, such as Scaler or Dask, or to enable Numpy's or Pandas' support,
+install the `scaler`, `dask`, `numpy`, or `pandas` extras as required:
 
 .. code:: bash
 
-    pip install "opengris-parfun[dask,scaler,pandas]"
+    pip install "opengris-parfun[dask,scaler,numpy,pandas]"
 
 **Initializing the library**
 
@@ -134,8 +134,9 @@ Combining functions
 In addition to the partitioning function, the ``@parallel`` decorator requires a combining function (``combine_with``) to
 collect results and handle the reduction stage of map-reduce.
 
-Parfun provides useful combining functions for handling :ref:`Python lists <section-lists>`
-and :ref:`Pandas dataframes <section-dataframes>`, such as: :py:func:`~parfun.py_list.concat` and :py:func:`~parfun.dataframe.concat`.
+Parfun provides useful combining functions for handling :ref:`Python lists <section-lists>`,
+:ref:`Numpy arrays <section-numpy>` and :ref:`Pandas dataframes <section-dataframes>`, such as:
+:py:func:`~parfun.py_list.concat`, :py:func:`~parfun.numpy.concat` and :py:func:`~parfun.dataframe.concat`.
 
 
 Custom partitioning and combining functions

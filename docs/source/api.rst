@@ -57,6 +57,15 @@ Python lists
     :members:
 
 
+.. _section-numpy:
+
+Numpy arrays
+------------
+
+.. automodule:: parfun.numpy
+    :members:
+
+
 .. _section-dataframes:
 
 Pandas dataframes

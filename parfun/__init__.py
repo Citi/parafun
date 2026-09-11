@@ -17,10 +17,16 @@ __all__ = (
 
 
 def __getattr__(name: str):
-    # Only load the dataframe module when requested, as it has an optional dependency on Pandas.
+    # Only load the dataframe and numpy modules when requested, as these have optional dependencies
+
     if name == "dataframe":
         import parfun.dataframe as dataframe
         sys.modules[__name__ + ".dataframe"] = dataframe
         return dataframe
+
+    if name == "numpy":
+        import parfun.numpy as numpy
+        sys.modules[__name__ + ".numpy"] = numpy
+        return numpy
 
     raise AttributeError(f"module {__name__} has no attribute {name}")

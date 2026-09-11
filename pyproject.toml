@@ -23,6 +23,7 @@ Home = "https://github.com/Citi/parfun"
 Issues = "https://github.com/Citi/parfun/issues"
 
 [project.optional-dependencies]
+numpy = ["numpy"]
 pandas = ["pandas"]
 dask = ["dask>=2025.5.1", "distributed>=2025.5.1"]
 scaler = ["opengris-scaler"]
